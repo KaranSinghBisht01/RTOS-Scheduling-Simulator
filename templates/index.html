@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RTOS Visualizer</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="dark-theme">
+  <!-- Top Navbar -->
+  <nav class="top-navbar">
+    <div class="navbar-left">
+      <div class="logo">
+        <i class="fas fa-microchip"></i>
+        <span class="logo-text">RTOS Visualizer</span>
+      </div>
+    </div>
+    <div class="navbar-center">
+      <div class="nav-modules">
+        <button class="nav-module active" data-tab="tasks">
+          <i class="fas fa-tasks"></i> Tasks
+        </button>
+        <button class="nav-module" data-tab="memory">
+          <i class="fas fa-memory"></i> Memory
+        </button>
+        <button class="nav-module" data-tab="cpu">
+          <i class="fas fa-microchip"></i> CPU
+        </button>
+        <button class="nav-module" data-tab="ipc">
+          <i class="fas fa-network-wired"></i> IPC
+        </button>
+        <button class="nav-module" data-tab="logs">
+          <i class="fas fa-terminal"></i> Logs
+        </button>
+      </div>
+    </div>
+    <div class="navbar-right">
+      <div class="refresh-control">
+        <label>Refresh:</label>
+        <select id="refreshRate">
+          <option value="0">Real-time</option>
+          <option value="1000">1s</option>
+          <option value="5000">5s</option>
+          <option value="-1">Pause</option>
+        </select>
+      </div>
+      <button class="theme-toggle" id="themeToggle">
+        <i class="fas fa-moon"></i>
+      </button>
+    </div>
+  </nav>
+
+  <div class="main-layout">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h3 class="sidebar-title">System Overview</h3>
+        
+        <div class="info-item">
+          <div class="info-label">
+            <i class="fas fa-clock"></i> System Clock
+          </div>
+          <div class="info-value" id="systemClock">0</div>
+        </div>
+
+        <div class="info-item">
+          <div class="info-label">
+            <i class="fas fa-cogs"></i> Scheduler
+          </div>
+          <div class="info-value">
+            <select id="algorithm" class="scheduler-select">
+              <option value="FCFS">FCFS</option>
+              <option value="SJF">SJF</option>
+              <option value="SRTF">SRTF</option>
+              <option value="Priority">Priority</option>
+              <option value="Round Robin">Round Robin</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="info-item">
+          <div class="info-label">
+            <i class="fas fa-list"></i> Total Tasks
+          </div>
+          <div class="info-value" id="totalTasks">0</div>
+        </div>
+
+        <div class="gauge-item">
+          <div class="gauge-label">
+            <i class="fas fa-tachometer-alt"></i> CPU Load
+          </div>
+          <div class="gauge-container">
+            <div class="gauge-bar">
+              <div class="gauge-fill" id="cpuGauge" style="width: 0%"></div>
+            </div>
+            <span class="gauge-value" id="cpuValue">0%</span>
+          </div>
+        </div>
+
+        <div class="gauge-item">
+          <div class="gauge-label">
+            <i class="fas fa-memory"></i> Memory Usage
+          </div>
+          <div class="gauge-container">
+            <div class="gauge-bar">
+              <div class="gauge-fill memory" id="memoryGauge" style="width: 0%"></div>
+            </div>
+            <span class="gauge-value" id="memoryValue">0%</span>
+          </div>
+        </div>
+
+        <div class="sidebar-actions">
+          <button class="btn-sidebar btn-primary" onclick="startSimulation()">
+            <i class="fas fa-play"></i> Start
+          </button>
+          <button class="btn-sidebar" onclick="pauseSimulation()" id="pauseBtn" disabled>
+            <i class="fas fa-pause"></i> Pause
+          </button>
+          <button class="btn-sidebar btn-danger" onclick="stopSimulation()" id="stopBtn" disabled>
+            <i class="fas fa-stop"></i> Stop
+          </button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h3 class="sidebar-title">Add Task</h3>
+        <div class="task-inputs">
+          <input type="text" id="pid" placeholder="Task ID" class="input-field">
+          <input type="number" id="burst" placeholder="Burst Time" min="1" class="input-field">
+          <input type="number" id="arrival" placeholder="Arrival Time" min="0" value="0" class="input-field">
+          <input type="number" id="priority" placeholder="Priority" min="0" value="0" class="input-field">
+          <input type="number" id="quantum" placeholder="Quantum (RR)" min="1" value="2" class="input-field" style="display: none;">
+          <button class="btn-sidebar btn-primary" onclick="addProcess()">
+            <i class="fas fa-plus"></i> Add Task
+          </button>
+          <button class="btn-sidebar" onclick="clearAll()">
+            <i class="fas fa-trash"></i> Clear All
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Tasks Tab -->
+      <div class="tab-content active" id="tasksTab">
+        <div class="tab-header">
+          <h2><i class="fas fa-tasks"></i> Task Timeline</h2>
+          <div class="tab-controls">
+            <button class="btn-icon" onclick="zoomIn()">
+              <i class="fas fa-search-plus"></i>
+            </button>
+            <button class="btn-icon" onclick="zoomOut()">
+              <i class="fas fa-search-minus"></i>
+            </button>
+            <button class="btn-icon" onclick="resetZoom()">
+              <i class="fas fa-expand"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="gantt-container">
+          <div class="gantt-chart" id="ganttChartContainer">
+            <div class="timeline-grid" id="ganttTimeline"></div>
+          </div>
+        </div>
+        <div class="simple-gantt-wrapper">
+          <h3 class="section-title">Simple Gantt Chart</h3>
+          <canvas id="simpleGanttCanvas" width="900" height="220"></canvas>
+        </div>
+        <div class="simple-gantt-wrapper">
+          <h3 class="section-title">Context Switch Timeline</h3>
+          <canvas id="switchGanttCanvas" width="900" height="200"></canvas>
+        </div>
+
+        <div class="task-table-container">
+          <h3 class="section-title">Task Status Table</h3>
+          <div class="table-wrapper">
+            <table id="processTable" class="task-table">
+              <thead>
+                <tr>
+                  <th><i class="fas fa-tag"></i> Task</th>
+                  <th><i class="fas fa-info-circle"></i> State</th>
+                  <th><i class="fas fa-star"></i> Priority</th>
+                  <th><i class="fas fa-percentage"></i> CPU%</th>
+                  <th><i class="fas fa-clock"></i> Burst</th>
+                  <th><i class="fas fa-hourglass-start"></i> Arrival</th>
+                  <th><i class="fas fa-exchange-alt"></i> Last Switch</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Memory Tab -->
+      <div class="tab-content" id="memoryTab">
+        <div class="tab-header">
+          <h2><i class="fas fa-memory"></i> Memory Visualization</h2>
+        </div>
+        <div class="memory-grid">
+          <div class="memory-card">
+            <h3>Heap Usage</h3>
+            <div class="heap-visualization">
+              <div class="heap-bar">
+                <div class="heap-fill" id="heapFill" style="width: 0%"></div>
+              </div>
+              <div class="heap-stats">
+                <span>Allocated: <strong id="heapAllocated">0</strong> KB</span>
+                <span>Free: <strong id="heapFree">0</strong> KB</span>
+              </div>
+            </div>
+          </div>
+          <div class="memory-card">
+            <h3>Stack Usage by Task</h3>
+            <div class="stack-list" id="stackList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CPU Tab -->
+      <div class="tab-content" id="cpuTab">
+        <div class="tab-header">
+          <h2><i class="fas fa-microchip"></i> CPU & Performance</h2>
+        </div>
+        <div class="cpu-grid">
+          <div class="cpu-card">
+            <h3>CPU Usage</h3>
+            <div class="chart-container">
+              <canvas id="cpuChart"></canvas>
+            </div>
+          </div>
+          <div class="cpu-card">
+            <h3>Context Switch Rate</h3>
+            <div class="metric-value-large" id="contextSwitchRate">0 /s</div>
+          </div>
+          <div class="cpu-card">
+            <h3>Interrupt Frequency</h3>
+            <div class="metric-value-large" id="interruptFreq">0 /s</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- IPC Tab -->
+      <div class="tab-content" id="ipcTab">
+        <div class="tab-header">
+          <h2><i class="fas fa-network-wired"></i> IPC Visualization</h2>
+        </div>
+        <div class="ipc-container">
+          <div class="ipc-section">
+            <h3>Semaphores</h3>
+            <div class="ipc-items" id="semaphoresList"></div>
+          </div>
+          <div class="ipc-section">
+            <h3>Mutexes</h3>
+            <div class="ipc-items" id="mutexesList"></div>
+          </div>
+          <div class="ipc-section">
+            <h3>Queues</h3>
+            <div class="ipc-items" id="queuesList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logs Tab -->
+      <div class="tab-content" id="logsTab">
+        <div class="tab-header">
+          <h2><i class="fas fa-terminal"></i> Event Logs</h2>
+          <div class="log-controls">
+            <input type="text" id="logFilter" placeholder="Filter logs..." class="input-field">
+            <button class="btn-icon" onclick="clearLogs()">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </div>
+        <div class="logs-container" id="logsContainer">
+          <div class="log-entry">
+            <span class="log-time">00:00:00.000</span>
+            <span class="log-type">[SYSTEM]</span>
+            <span class="log-message">RTOS Visualizer initialized</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- PCB View Modal -->
+  <div class="modal" id="pcbModal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Process Control Block</h3>
+        <button class="modal-close" onclick="closePCBModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body" id="pcbModalBody"></div>
+    </div>
+  </div>
+
+  <script>
+    const TICK_MS = 500;
+    const TIMELINE_LABEL_WIDTH = 70;
+    
+    let processes = [];
+    let readyQueue = [];
+    let runningTask = null;
+    let intervalId = null;
+    let isSimulationRunning = false;
+    let isPaused = false;
+    let refreshInterval = null;
+    let systemClock = 0;
+    let pcbs = {};
+    let logs = [];
+    const refreshSelect = document.getElementById('refreshRate');
+    let schedulerAlgorithm = document.getElementById('algorithm').value || 'FCFS';
+    let quantumValue = parseInt(document.getElementById('quantum').value || 2, 10);
+    let timeSliceRemaining = null;
+    const simpleGanttCanvas = document.getElementById('simpleGanttCanvas');
+    const simpleGanttCtx = simpleGanttCanvas ? simpleGanttCanvas.getContext('2d') : null;
+    let executionTimeline = [];
+    const switchGanttCanvas = document.getElementById('switchGanttCanvas');
+    const switchGanttCtx = switchGanttCanvas ? switchGanttCanvas.getContext('2d') : null;
+
+    async function apiRequest(url, options = {}) {
+      const config = {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      };
+      try {
+        const response = await fetch(url, config);
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || 'Request failed');
+        }
+        return response.json();
+      } catch (err) {
+        console.error(`Request to ${url} failed`, err);
+        throw err;
+      }
+    }
+
+    function mapProcess(raw) {
+      const arrival = parseInt(raw.arrival ?? 0, 10) || 0;
+      const burst = parseInt(raw.burst, 10) || 0;
+      const priority = parseInt(raw.priority ?? 0, 10) || 0;
+      return {
+        id: raw.pid,
+        pid: raw.pid,
+        arrival,
+        burst,
+        priority,
+        remaining: burst,
+        state: 'NEW',
+        start: null,
+        end: null,
+        activeSliceStart: null
+      };
+    }
+
+    function syncPCB(proc, resetCounters = false) {
+      const pcb = pcbs[proc.pid];
+      if (!pcb) return;
+      if (resetCounters) {
+        pcb.cpuTimeUsed = 0;
+        pcb.contextSwitchCount = 0;
+      }
+      pcb.state = proc.state;
+      pcb.arrivalTime = proc.arrival;
+      pcb.burstTime = proc.burst;
+      pcb.remainingBurst = proc.remaining;
+      pcb.priority = proc.priority;
+      pcb.cpuTimeUsed = proc.burst - proc.remaining;
+    }
+
+    function ensurePCBForProcess(proc) {
+      if (!pcbs[proc.pid]) {
+        pcbs[proc.pid] = createPCB(proc.pid, proc.arrival, proc.burst, proc.priority);
+      }
+      syncPCB(proc, true);
+    }
+
+    async function loadProcesses() {
+      try {
+        const data = await apiRequest('/api/processes');
+        processes = (data.processes || []).map(mapProcess);
+        processes.sort((a, b) => (a.arrival - b.arrival) || a.pid.localeCompare(b.pid));
+        processes.forEach(ensurePCBForProcess);
+        resetSchedulerState();
+      } catch (err) {
+        addLog('ERROR', `Failed to load tasks: ${err.message}`);
+      }
+    }
+
+    function renderStackList(stacks = []) {
+      const container = document.getElementById('stackList');
+      container.innerHTML = '';
+      stacks.forEach(stack => {
+        const percent = Math.round((stack.used / stack.limit) * 100);
+        const item = document.createElement('div');
+        item.className = 'stack-item';
+        item.innerHTML = `
+          <div class="stack-item-header">
+            <span>${stack.pid}</span>
+            <span>${stack.used} / ${stack.limit} KB</span>
+          </div>
+          <div class="stack-progress">
+            <div class="stack-progress-fill" style="width: ${percent}%"></div>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    async function loadIPCOverview() {
+      try {
+        const data = await apiRequest('/api/ipc');
+        renderIPCSection('semaphoresList', data.semaphores, item => `
+          <div class="ipc-item">
+            <div>
+              <strong>${item.name}</strong>
+              <div>Count: ${item.count}</div>
+            </div>
+            <div>Waiting: ${item.waiting.join(', ') || 'None'}</div>
+          </div>
+        `);
+        renderIPCSection('mutexesList', data.mutexes, item => `
+          <div class="ipc-item">
+            <div>
+              <strong>${item.name}</strong>
+              <div>Owner: ${item.owner || 'None'}</div>
+            </div>
+            <div>Waiting: ${item.waiting.join(', ') || 'None'}</div>
+          </div>
+        `);
+        renderIPCSection('queuesList', data.queues, item => `
+          <div class="ipc-item">
+            <strong>${item.name}</strong>
+            <div class="queue-bar">
+              <div class="queue-bar-fill" style="width: ${item.fill_level}%"></div>
+            </div>
+            <div>${item.fill_level}% Full</div>
+          </div>
+        `);
+      } catch (err) {
+        addLog('ERROR', `Failed to load IPC data: ${err.message}`);
+      }
+    }
+
+    function renderIPCSection(elementId, items = [], templateFn) {
+      const container = document.getElementById(elementId);
+      container.innerHTML = items.map(templateFn).join('');
+    }
+
+    function handleRefreshChange() {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
+      const value = parseInt(refreshSelect.value, 10);
+      if (value === -1) {
+        return;
+      }
+      const interval = value === 0 ? 1000 : value;
+      refreshInterval = setInterval(() => {
+        updateSystemOverview();
+        loadIPCOverview();
+      }, interval);
+    }
+
+    // Theme toggle
+    document.getElementById('themeToggle').addEventListener('click', function() {
+      document.body.classList.toggle('dark-theme');
+      document.body.classList.toggle('light-theme');
+      const icon = this.querySelector('i');
+      icon.classList.toggle('fa-moon');
+      icon.classList.toggle('fa-sun');
+    });
+
+    refreshSelect.addEventListener('change', handleRefreshChange);
+
+    // Tab switching
+    document.querySelectorAll('.nav-module').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const tab = this.dataset.tab;
+        document.querySelectorAll('.nav-module').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.getElementById(tab + 'Tab').classList.add('active');
+      });
+    });
+
+    // Algorithm change handler
+    document.getElementById('algorithm').addEventListener('change', function() {
+      schedulerAlgorithm = this.value;
+      const quantumInput = document.getElementById('quantum');
+      if (schedulerAlgorithm === 'Round Robin') {
+        quantumInput.style.display = 'block';
+      } else {
+        quantumInput.style.display = 'none';
+      }
+    });
+
+    // Add log function
+    function addLog(type, message) {
+      const time = new Date().toLocaleTimeString() + '.' + Date.now().toString().slice(-3);
+      const logEntry = document.createElement('div');
+      logEntry.className = 'log-entry';
+      logEntry.innerHTML = `
+        <span class="log-time">${time}</span>
+        <span class="log-type log-${type.toLowerCase()}">[${type}]</span>
+        <span class="log-message">${message}</span>
+      `;
+      document.getElementById('logsContainer').prepend(logEntry);
+      logs.unshift({time, type, message});
+      if (logs.length > 1000) logs.pop();
+    }
+
+    async function addProcess() {
+      const pid = document.getElementById('pid').value || `T${processes.length + 1}`;
+      const burst = parseInt(document.getElementById('burst').value);
+      const arrival = parseInt(document.getElementById('arrival').value) || 0;
+      const priority = parseInt(document.getElementById('priority').value) || 0;
+      if (!burst) return alert("Enter burst time!");
+
+      try {
+        await apiRequest('/api/processes', {
+          method: 'POST',
+          body: JSON.stringify({ pid, burst, arrival, priority })
+        });
+        addLog('TASK', `Task ${pid} created (Burst: ${burst}, Priority: ${priority})`);
+        await loadProcesses();
+      } catch (err) {
+        alert(err.message);
+      }
+
+      document.getElementById('pid').value = '';
+      document.getElementById('burst').value = '';
+      document.getElementById('arrival').value = '';
+      document.getElementById('priority').value = '';
+    }
+
+    async function clearAll() {
+      try {
+        await apiRequest('/api/processes', { method: 'DELETE' });
+        stopScheduler(false);
+        processes = [];
+        pcbs = {};
+        readyQueue = [];
+        runningTask = null;
+        systemClock = 0;
+        executionTimeline = [];
+        updateUI();
+        document.getElementById('pauseBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = true;
+        addLog('SYSTEM', 'All tasks cleared');
+      } catch (err) {
+        addLog('ERROR', `Failed to clear tasks: ${err.message}`);
+      }
+    }
+
+    function createPCB(pid, arrival, burst, priority) {
+      return {
+        pid: pid,
+        state: 'NEW',
+        arrivalTime: arrival,
+        burstTime: burst,
+        remainingBurst: burst,
+        priority: priority,
+        registers: {
+          PC: 0,
+          SP: Math.floor(Math.random() * 1000) + 1000,
+          AX: Math.floor(Math.random() * 100),
+          BX: Math.floor(Math.random() * 100),
+        },
+        memoryBase: Math.floor(Math.random() * 10000) + 5000,
+        memoryLimit: Math.floor(Math.random() * 5000) + 1000,
+        cpuTimeUsed: 0,
+        contextSwitchCount: 0,
+        creationTime: Date.now(),
+      };
+    }
+
+    function updateTable() {
+      const tbody = document.querySelector('#processTable tbody');
+      tbody.innerHTML = '';
+      processes.forEach(p => {
+        const pcb = pcbs[p.pid] || {};
+        const state = p.state || 'NEW';
+        const stateClass = state.toLowerCase();
+        const cpuPercent = p.burst ? Math.round(((p.burst - p.remaining) / p.burst) * 100) : 0;
+        const lastSwitch = p.end !== null
+          ? p.end
+          : (p.state === 'RUNNING' ? systemClock : (p.start ?? 0));
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td><strong>${p.pid}</strong></td>
+          <td><span class="state-badge state-${stateClass}">${state}</span></td>
+          <td>${p.priority || 0}</td>
+          <td>${cpuPercent}%</td>
+          <td>${p.burst}</td>
+          <td>${p.arrival || 0}</td>
+          <td>${lastSwitch} (${pcb.contextSwitchCount || 0})</td>
+        `;
+        row.addEventListener('click', () => showPCBModal(p.pid));
+        tbody.appendChild(row);
+      });
+      document.getElementById('totalTasks').textContent = processes.length;
+    }
+
+    function buildMemoryStats() {
+      const activeTasks = processes.filter(p => p.state !== 'TERMINATED');
+      const usagePercent = processes.length ? Math.round((activeTasks.length / processes.length) * 100) : 0;
+      const heapAllocated = Math.round((usagePercent / 100) * 512);
+      const stacks = processes.map(proc => {
+        const limit = Math.max(128, proc.burst * 8);
+        const used = Math.min(limit, (proc.burst - proc.remaining) * 8);
+        return { pid: proc.pid, used, limit };
+      });
+      return {
+        usagePercent,
+        heapAllocated,
+        heapFree: Math.max(0, 512 - heapAllocated),
+        stacks
+      };
+    }
+
+    function updateSystemOverview() {
+      document.getElementById('systemClock').textContent = systemClock;
+      document.getElementById('totalTasks').textContent = processes.length;
+      
+      const cpuUsage = runningTask ? 100 : 0;
+      document.getElementById('cpuGauge').style.width = cpuUsage + '%';
+      document.getElementById('cpuValue').textContent = `${cpuUsage}%`;
+      
+      const memoryStats = buildMemoryStats();
+      document.getElementById('memoryGauge').style.width = memoryStats.usagePercent + '%';
+      document.getElementById('memoryValue').textContent = `${memoryStats.usagePercent}%`;
+      document.getElementById('heapAllocated').textContent = memoryStats.heapAllocated;
+      document.getElementById('heapFree').textContent = memoryStats.heapFree;
+      renderStackList(memoryStats.stacks);
+      
+      const totalContextSwitches = processes.reduce((sum, proc) => {
+        const pcb = pcbs[proc.pid];
+        return sum + (pcb ? pcb.contextSwitchCount : 0);
+      }, 0);
+      const rate = systemClock ? (totalContextSwitches / systemClock).toFixed(2) : '0.00';
+      document.getElementById('contextSwitchRate').textContent = `${rate} /s`;
+      document.getElementById('interruptFreq').textContent = `${(parseFloat(rate) * 4).toFixed(2)} /s`;
+    }
+
+    function renderTimeline() {
+      const container = document.getElementById('ganttTimeline');
+      if (!container) return;
+      container.innerHTML = '';
+      if (!processes.length) return;
+      
+      const started = processes.filter(p => p.start !== null);
+      const earliestStart = started.length ? Math.min(...started.map(p => p.start)) : 0;
+      const latestEnd = started.length
+        ? Math.max(...started.map(p => (p.state === 'TERMINATED' ? p.end : systemClock)))
+        : Math.max(systemClock, 1);
+      const span = Math.max(1, latestEnd - earliestStart || 1);
+      const containerWidth = container.clientWidth || container.offsetWidth || 1;
+      const usableWidth = Math.max(1, containerWidth - TIMELINE_LABEL_WIDTH);
+      const scaleFactor = usableWidth / span;
+      
+      processes.forEach(proc => {
+        const row = document.createElement('div');
+        row.className = 'timeline-row';
+        const label = document.createElement('span');
+        label.className = 'timeline-label';
+        label.textContent = proc.pid;
+        row.appendChild(label);
+        
+        if (proc.start !== null) {
+          const effectiveEnd = proc.state === 'TERMINATED' ? proc.end : systemClock;
+          const barWidthUnits = Math.max(0, effectiveEnd - proc.start);
+          const widthPx = Math.max(0, barWidthUnits * scaleFactor);
+          const leftPx = TIMELINE_LABEL_WIDTH + (proc.start - earliestStart) * scaleFactor;
+          if (widthPx > 0) {
+            const bar = document.createElement('div');
+            bar.className = `timeline-bar state-${proc.state.toLowerCase()}`;
+            bar.style.left = `${leftPx}px`;
+            bar.style.width = `${widthPx}px`;
+            row.appendChild(bar);
+          }
+        }
+        
+        container.appendChild(row);
+      });
+    }
+
+    function updateUI() {
+      updateSystemOverview();
+      updateTable();
+      renderTimeline();
+      renderSimpleGantt();
+      renderSwitchGantt();
+    }
+
+    function renderSimpleGantt() {
+      if (!simpleGanttCtx || !simpleGanttCanvas) return;
+      const visibleProcesses = processes.filter(p => p.start !== null);
+      if (!visibleProcesses.length) {
+        simpleGanttCtx.clearRect(0, 0, simpleGanttCanvas.width, simpleGanttCanvas.height);
+        return;
+      }
+      const padding = 50;
+      const rowHeight = 24;
+      const rowGap = 12;
+      const colors = ['#00C853', '#FFD600', '#D50000', '#2962FF', '#AA00FF', '#FF6D00'];
+      const earliestStart = Math.min(...visibleProcesses.map(p => p.start));
+      const latestEnd = Math.max(...visibleProcesses.map(p => (p.state === 'TERMINATED' ? p.end : systemClock)));
+      const span = Math.max(1, latestEnd - earliestStart);
+      const wrapperWidth = simpleGanttCanvas.parentElement ? simpleGanttCanvas.parentElement.clientWidth - 40 : simpleGanttCanvas.width;
+      simpleGanttCanvas.width = Math.max(400, wrapperWidth);
+      simpleGanttCanvas.height = visibleProcesses.length * (rowHeight + rowGap) + padding * 1.5;
+      const ctx = simpleGanttCtx;
+      ctx.clearRect(0, 0, simpleGanttCanvas.width, simpleGanttCanvas.height);
+      ctx.fillStyle = '#1e1e1e';
+      ctx.fillRect(0, 0, simpleGanttCanvas.width, simpleGanttCanvas.height);
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padding, padding - 20);
+      ctx.lineTo(padding, simpleGanttCanvas.height - padding / 2);
+      ctx.moveTo(padding, simpleGanttCanvas.height - padding / 2);
+      ctx.lineTo(simpleGanttCanvas.width - padding / 2, simpleGanttCanvas.height - padding / 2);
+      ctx.stroke();
+      const usableWidth = simpleGanttCanvas.width - padding * 1.5;
+      const scaleFactor = usableWidth / span;
+      ctx.font = '12px Segoe UI';
+      ctx.textBaseline = 'middle';
+      visibleProcesses.forEach((proc, index) => {
+        const y = padding + index * (rowHeight + rowGap);
+        ctx.fillStyle = '#B0B0B0';
+        ctx.fillText(proc.pid, 10, y + rowHeight / 2);
+        const effectiveEnd = proc.state === 'TERMINATED' ? proc.end : systemClock;
+        const barWidthUnits = Math.max(0, effectiveEnd - proc.start);
+        const widthPx = Math.max(2, barWidthUnits * scaleFactor);
+        const leftPx = padding + (proc.start - earliestStart) * scaleFactor;
+        ctx.fillStyle = colors[index % colors.length];
+        ctx.fillRect(leftPx, y, widthPx, rowHeight);
+        ctx.fillStyle = '#000';
+        ctx.globalAlpha = 0.4;
+        ctx.fillRect(leftPx, y + rowHeight - 8, widthPx, 8);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#fff';
+        ctx.fillText(`${proc.start}-${effectiveEnd}`, leftPx + 4, y + rowHeight / 2);
+      });
+      const tickCount = Math.min(10, span);
+      ctx.fillStyle = '#B0B0B0';
+      for (let i = 0; i <= tickCount; i++) {
+        const value = earliestStart + Math.round((span / tickCount) * i);
+        const x = padding + ((value - earliestStart) * scaleFactor);
+        ctx.fillRect(x, simpleGanttCanvas.height - padding / 2 - 5, 1, 10);
+        ctx.fillText(value.toString(), x - 5, simpleGanttCanvas.height - padding / 2 + 15);
+      }
+    }
+
+    function renderSwitchGantt() {
+      if (!switchGanttCtx || !switchGanttCanvas) return;
+      const segments = executionTimeline.slice();
+      if (runningTask && runningTask.activeSliceStart !== null) {
+        segments.push({
+          pid: runningTask.pid,
+          start: runningTask.activeSliceStart,
+          end: systemClock
+        });
+      }
+      if (!segments.length) {
+        switchGanttCtx.clearRect(0, 0, switchGanttCanvas.width, switchGanttCanvas.height);
+        return;
+      }
+      const padding = 50;
+      const rowHeight = 18;
+      const rowGap = 10;
+      const colors = ['#00C853', '#FFD600', '#D50000', '#2962FF', '#AA00FF', '#FF6D00'];
+      const pids = [...new Set(segments.map(seg => seg.pid))];
+      const earliestStart = Math.min(...segments.map(seg => seg.start));
+      const latestEnd = Math.max(...segments.map(seg => seg.end));
+      const span = Math.max(1, latestEnd - earliestStart);
+      const wrapperWidth = switchGanttCanvas.parentElement ? switchGanttCanvas.parentElement.clientWidth - 40 : switchGanttCanvas.width;
+      switchGanttCanvas.width = Math.max(400, wrapperWidth);
+      switchGanttCanvas.height = pids.length * (rowHeight + rowGap) + padding * 1.5;
+      const ctx = switchGanttCtx;
+      ctx.clearRect(0, 0, switchGanttCanvas.width, switchGanttCanvas.height);
+      ctx.fillStyle = '#1e1e1e';
+      ctx.fillRect(0, 0, switchGanttCanvas.width, switchGanttCanvas.height);
+      ctx.strokeStyle = '#444';
+      ctx.beginPath();
+      ctx.moveTo(padding, padding - 20);
+      ctx.lineTo(padding, switchGanttCanvas.height - padding / 2);
+      ctx.moveTo(padding, switchGanttCanvas.height - padding / 2);
+      ctx.lineTo(switchGanttCanvas.width - padding / 2, switchGanttCanvas.height - padding / 2);
+      ctx.stroke();
+      const usableWidth = switchGanttCanvas.width - padding * 1.5;
+      const scaleFactor = usableWidth / span;
+      ctx.font = '11px Segoe UI';
+      ctx.textBaseline = 'middle';
+      pids.forEach((pid, index) => {
+        const y = padding + index * (rowHeight + rowGap);
+        ctx.fillStyle = '#B0B0B0';
+        ctx.fillText(pid, 12, y + rowHeight / 2);
+        segments
+          .filter(seg => seg.pid === pid)
+          .forEach(seg => {
+            const widthPx = Math.max(2, (seg.end - seg.start) * scaleFactor);
+            const leftPx = padding + (seg.start - earliestStart) * scaleFactor;
+            ctx.fillStyle = colors[index % colors.length];
+            ctx.fillRect(leftPx, y, widthPx, rowHeight);
+          });
+      });
+      ctx.fillStyle = '#B0B0B0';
+      const tickCount = Math.min(10, span);
+      for (let i = 0; i <= tickCount; i++) {
+        const value = earliestStart + Math.round((span / tickCount) * i);
+        const x = padding + ((value - earliestStart) * scaleFactor);
+        ctx.fillRect(x, switchGanttCanvas.height - padding / 2 - 4, 1, 8);
+        ctx.fillText(value.toString(), x - 5, switchGanttCanvas.height - padding / 2 + 12);
+      }
+    }
+
+    function resetSchedulerState() {
+      readyQueue = [];
+      runningTask = null;
+      executionTimeline = [];
+      timeSliceRemaining = null;
+      systemClock = 0;
+      processes = processes.map(proc => ({
+        ...proc,
+        remaining: proc.burst,
+        state: 'NEW',
+        start: null,
+        end: null,
+        activeSliceStart: null
+      }));
+      Object.values(pcbs).forEach(pcb => {
+        pcb.cpuTimeUsed = 0;
+        pcb.contextSwitchCount = 0;
+        pcb.state = 'NEW';
+      });
+      processes.forEach(proc => syncPCB(proc));
+      updateUI();
+    }
+
+    function enqueueArrivals(tickStart) {
+      processes.forEach(proc => {
+        if (proc.state === 'NEW' && proc.arrival <= tickStart) {
+          proc.state = 'READY';
+          readyQueue.push(proc);
+          syncPCB(proc);
+        }
+      });
+    }
+
+    function recordExecutionSlice(task, endTime) {
+      if (!task) return;
+      const sliceStart = task.activeSliceStart;
+      if (sliceStart === null || sliceStart === undefined) return;
+      if (endTime <= sliceStart) return;
+      executionTimeline.push({
+        pid: task.pid,
+        start: sliceStart,
+        end: endTime
+      });
+      task.activeSliceStart = null;
+    }
+
+    function promoteNextTask(tickStart) {
+      if (runningTask || !readyQueue.length) return;
+      runningTask = readyQueue.shift();
+      runningTask.state = 'RUNNING';
+      if (runningTask.start === null) {
+        runningTask.start = tickStart;
+      }
+      runningTask.activeSliceStart = tickStart;
+      timeSliceRemaining = schedulerAlgorithm === 'Round Robin' ? quantumValue : null;
+      const pcb = pcbs[runningTask.pid];
+      if (pcb) {
+        pcb.contextSwitchCount += 1;
+      }
+      syncPCB(runningTask);
+    }
+
+    function executeRunningTask(tickStart) {
+      if (!runningTask) return;
+      runningTask.remaining = Math.max(0, runningTask.remaining - 1);
+      if (schedulerAlgorithm === 'Round Robin' && timeSliceRemaining !== null) {
+        timeSliceRemaining = Math.max(0, timeSliceRemaining - 1);
+      }
+      syncPCB(runningTask);
+      if (runningTask.remaining <= 0) {
+        recordExecutionSlice(runningTask, tickStart + 1);
+        runningTask.end = tickStart + 1;
+        runningTask.state = 'TERMINATED';
+        syncPCB(runningTask);
+        runningTask = null;
+        timeSliceRemaining = null;
+      } else if (schedulerAlgorithm === 'Round Robin' && timeSliceRemaining === 0) {
+        recordExecutionSlice(runningTask, tickStart + 1);
+        runningTask.state = 'READY';
+        readyQueue.push(runningTask);
+        syncPCB(runningTask);
+        runningTask = null;
+        timeSliceRemaining = null;
+      }
+    }
+
+    function schedulerStep() {
+      const tickStart = systemClock;
+      enqueueArrivals(tickStart);
+      promoteNextTask(tickStart);
+      executeRunningTask(tickStart);
+      systemClock = tickStart + 1;
+      updateUI();
+      
+      if (processes.length && processes.every(proc => proc.state === 'TERMINATED')) {
+        stopScheduler(false);
+        document.getElementById('pauseBtn').disabled = true;
+        addLog('SYSTEM', 'Simulation completed');
+      }
+    }
+
+    function startScheduler() {
+      if (intervalId) return;
+      intervalId = setInterval(schedulerStep, TICK_MS);
+      isSimulationRunning = true;
+      isPaused = false;
+      document.getElementById('pauseBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = false;
+    }
+
+    function stopScheduler(resetState) {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+      isSimulationRunning = false;
+      isPaused = false;
+      if (resetState) {
+        resetSchedulerState();
+        document.getElementById('pauseBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = true;
+      }
+    }
+
+    function startSimulation() {
+      if (intervalId) return;
+      if (!processes.length) {
+        alert('Add at least one task before running the simulation.');
+        return;
+      }
+      const finished = processes.length && processes.every(proc => proc.state === 'TERMINATED');
+      if (systemClock === 0 || finished) {
+        resetSchedulerState();
+      }
+      schedulerAlgorithm = document.getElementById('algorithm').value || 'FCFS';
+      if (schedulerAlgorithm === 'Round Robin') {
+        const quantumInputValue = parseInt(document.getElementById('quantum').value || 2, 10);
+        quantumValue = Math.max(1, quantumInputValue || 2);
+      }
+      startScheduler();
+      addLog('SYSTEM', `Scheduler started (${schedulerAlgorithm})`);
+    }
+
+    function pauseSimulation() {
+      if (!intervalId) return;
+      clearInterval(intervalId);
+      intervalId = null;
+      isSimulationRunning = false;
+      isPaused = true;
+      document.getElementById('pauseBtn').disabled = true;
+      addLog('SYSTEM', 'Simulation paused');
+    }
+
+    function stopSimulation() {
+      if (!processes.length && systemClock === 0) return;
+      stopScheduler(true);
+      addLog('SYSTEM', 'Simulation stopped');
+    }
+
+
+    function showPCBModal(pid) {
+      const pcb = pcbs[pid];
+      if (!pcb) return;
+      
+      document.getElementById('pcbModalBody').innerHTML = `
+        <div class="pcb-details-modal">
+          <h4>Task ${pid}</h4>
+          <div class="detail-row"><strong>State:</strong> ${pcb.state}</div>
+          <div class="detail-row"><strong>Burst Time:</strong> ${pcb.burstTime}</div>
+          <div class="detail-row"><strong>Remaining:</strong> ${pcb.remainingBurst}</div>
+          <div class="detail-row"><strong>Priority:</strong> ${pcb.priority}</div>
+          <div class="detail-row"><strong>CPU Time Used:</strong> ${pcb.cpuTimeUsed}</div>
+          <div class="detail-row"><strong>Context Switches:</strong> ${pcb.contextSwitchCount}</div>
+          <h5>Registers</h5>
+          <div class="detail-row">PC: 0x${pcb.registers.PC.toString(16).toUpperCase()}</div>
+          <div class="detail-row">SP: 0x${pcb.registers.SP.toString(16).toUpperCase()}</div>
+        </div>
+      `;
+      document.getElementById('pcbModal').style.display = 'flex';
+    }
+
+    function closePCBModal() {
+      document.getElementById('pcbModal').style.display = 'none';
+    }
+
+    function zoomIn() { addLog('UI', 'Zoom in'); }
+    function zoomOut() { addLog('UI', 'Zoom out'); }
+    function resetZoom() { addLog('UI', 'Reset zoom'); }
+    function clearLogs() {
+      document.getElementById('logsContainer').innerHTML = '';
+      logs = [];
+    }
+
+    // Initialize
+    (async function init() {
+      await loadProcesses();
+      updateSystemOverview();
+      await loadIPCOverview();
+      handleRefreshChange();
+      addLog('SYSTEM', 'RTOS Visualizer ready');
+    })();
+  </script>
+</body>
+</html>
